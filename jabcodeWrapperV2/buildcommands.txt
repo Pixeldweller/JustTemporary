@@ -1,0 +1,14 @@
+-- FUER WRAPPER:
+
+gcc -c jabwriterWrapper.c -m32 -I./include
+
+gcc -shared jabwriterWrapper.o -L./build -ljabcode -L./lib/win32 -ltiff -lpng16 -lz -lm -o jabwrapper.dll -m32 -Wl,--add-stdcall-alias
+
+-- FUER 32-Bit LIBJABCODE:
+
+gcc binarizer.o image.o interleave.o pseudo_random.o sample.o mask.o detector.o encoder.o transform.o ldpc.o decoder.o -L./lib/win32 -ltiff -lpng16 -lz -lm -shared -O2 -std=c11 -o build/libjabcode.dll -Wl,--output-def=jabcode.def,--out-implib=libjabcode.a -m32
+
+
+-- mit cl.exe:
+
+(noch nicht möglich, da .lib noch nicht kompiliert...)
