@@ -9,12 +9,11 @@ Type jabDTO
   module_size As Long
   master_symbol_width As Long
   master_symbol_height As Long
-  symbol_positions() As Long 'Liste
+  symbol_positions As String ' eigentlich Liste -> aber Stringparse leichter
   symbol_positions_number As Long
-  symbol_versions_x As Long
-  symbol_versions_y As Long
+  symbol_versions As String ' eigentlich Liste -> aber Stringparse leichter
   symbol_versions_number As Long
-  symbol_ecc_levels() As Long 'Liste
+  symbol_ecc_levels As String ' eigentlich Liste -> aber Stringparse leichter
   symbol_ecc_levels_number As Long
   color_space As Long
 End Type
@@ -28,15 +27,33 @@ Type jab_bitmap_mod
     pixel() As Byte
 End Type
 
-Declare Function writeToTmpFile _
-        Lib "c:\Users\fabio\Desktop\jabcode-master\dll_test\jabcodeWrapper\jabwrapper.dll" ( _
+Private Declare Function FreeLibrary Lib "kernel32" (ByVal hLibModule As Long) As Long
+Private Declare Function LoadLibrary Lib "kernel32" Alias "LoadLibraryA" (ByVal lpLibFileName As String) As Long
+
+Private Declare PtrSafe Function GetModuleHandle Lib "kernel32" Alias "GetModuleHandleA" (ByVal GetModuleHandle As String) As LongPtr
+
+
+Private Declare Function writeToTmpFile _
+        Lib "C:\Users\fabio\Desktop\jabcode-master\dll_test\jabcodeWrapper\jabwrapper.dll" ( _
               ptrFoo As jabDTO _
         ) As LongPtr
         
-Declare Function writeToByteArray _
-        Lib "c:\Users\fabio\Desktop\jabcode-master\dll_test\jabcodeWrapper\jabwrapper.dll" ( _
+Private Declare Function writeToByteArray _
+        Lib "C:\Users\fabio\Desktop\jabcode-master\dll_test\jabcodeWrapper\jabwrapper.dll" ( _
               ptrFoo As jabDTO, ptrBitmap As jab_bitmap_mod _
         ) As LongPtr
+        
+Private Declare Function readFromJabPNG _
+        Lib "C:\Users\fabio\Desktop\jabcode-master\dll_test\jabcodeWrapper\jabwrapper.dll" ( _
+              ptrFoo As jabDTO _
+        ) As LongPtr
+
+' hier haette man eigentlich ein Interger/Long zurueckgeben koennen, aber Type Konversion kann gelegentlich CRASH erzeugen, daher hab ich die Schnittstelle genauso wie bei den anderen Funktionen gelassen ._.
+Private Declare Function getMasterSymbolEncodingCapacity _
+        Lib "C:\Users\fabio\Desktop\jabcode-master\dll_test\jabcodeWrapper\jabwrapper.dll" ( _
+              ptrFoo As jabDTO _
+        ) As LongPtr
+
 
 
 Declare PtrSafe Function SetCurrentDirectoryA _
@@ -81,7 +98,8 @@ Function utf8PtrToString(ByVal pUtf8string As LongPtr) As String ' {
 
 End Function ' }
 
-' ACHTUNG: Nach jedem ausf�hren auf STOP klicken, weil sonst gibt es eine Zugriffsverletzung und WORD crasht..
+' ACHTUNG: Niemals die Ziel PNG von irgendeinem Programm geöffnet haben :D (Alt : Nach jedem ausführen auf STOP klicken, weil sonst gibt es eine Zugriffsverletzung und WORD crasht..)
+'           -- Es kann noch zu gelegentlichen crashes kommen, wenn zu schnell hintereinander nach dem Entladen, die gleiche DLL-Funktion wiederverwendet wird.. also noch nicht ganz perfekt
 
 Sub main() ' {
 
@@ -89,19 +107,55 @@ Sub main() ' {
     SetCurrentDirectoryA ("C:\Users\fabio\Desktop\jabcode-master\dll_test\jabcodeWrapper\dlls") ' AENDERN IN LOKALEN DLL PFAD
 
     Dim x As jabDTO
-    x.inputstring = "hello world"
+    x.inputstring = "longer test string is super duper duper super loooooooooooooooooooooooooooooooooooooooong1234567890987654321234567876543212345676543212345676543211234567654321ooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo"
     x.filename = "C:\Users\fabio\Desktop\jabcode-master\dll_test\jabcodeWrapper\test.png" ' WENN AUSKOMMENTIERT ODER NULL, DANN WIRD IN %TEMP%/tmpjabcode.png GESPEICHERT
-    'x.color_number = 4
-   
+    x.color_number = 4
+    x.module_size = 4
+    
+    ' Beispiel encoding wie jabcodeWrite.exe - Usage example
+    x.symbol_number = 3
+    x.symbol_positions = "0 3 2"
+    x.symbol_versions = "3 2 4 2 3 2"
+    
+    ' DLL explizit dynamisch laden:
+    Dim lb As Long
+    lb = LoadLibrary("C:\Users\fabio\Desktop\jabcode-master\dll_test\jabcodeWrapper\jabwrapper.dll")
+
+    ' NUR UNTERSCHIEDLICHE DLL FUNKTIONEN AUFRUFEN!!
+    
+    ' READ JABCODE FILE
+    Dim r As String
+    r = utf8PtrToString(readFromJabPNG(x))
+    MsgBox "decodierter text = " & r
+    
+    ' WRITE JABCODE FILE
     Dim s As String
     s = utf8PtrToString(writeToTmpFile(x))
-    MsgBox "s = " & s
+    MsgBox "pfad = " & s
     
-    ' Fuehrt zum Word Crash -> Immer wenn auf uebergebenen Typ geschrieben wird und dieser zurueckgegeben wird.. (alternativen muessen noch getestet werden)
-    'Dim bitmap As jab_bitmap_mod
-    'Dim test As String
-    'test = writeToByteArray(x, bitmap)
-    'MsgBox test
+    ' DLL ENTLADEN -> Kann in unterfunktion ausgelagert werden und sollte immer aufgerufen, werden sobald eine DLL Funktion nochmal aufgerufen wird... ist blöd, aber verhindert CRASH
+    Do Until lb = 0
+        FreeLibrary lb
+        If CBool(Err.LastDllError) Then
+            MsgBox "dll error" & " " & Err.LastDllError
+            Err.Clear
+            Exit Do
+        End If
+
+        lb = 0 ' Reset lb needed for test on next line
+
+        ' Check if the dll really has been released...
+        lb = GetModuleHandle("C:\Users\fabio\Desktop\jabcode-master\dll_test\jabcodeWrapper\jabwrapper.dll")
+    Loop
+    
+    ' hier kann wieder eine DLL Funktion von oben aufgerufen werden
+    
+    
+    ' getMasterSymbolEncodingCapacity benutzt gleiche Datentypen von writeToTmpFile, also wichtig vorher DLL entladen, falls writeToTmpFile aufgerufen wurde
+    Dim c As String
+    c = utf8PtrToString(getMasterSymbolEncodingCapacity(x))
+    MsgBox "kapazitaet (?) = " & c
+          
 
 End Sub ' }
 
